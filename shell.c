@@ -5,6 +5,7 @@
 #include <unistd.h>    
 #include <sys/wait.h>
 #include <fcntl.h>
+#define MAX_ARGS 64
  int generate_tokens(char *str, char *argv[]){
     int argc = 0;
     char *token = strtok(str, " ");
@@ -45,6 +46,82 @@ int redirection_handling(char *argv[], int argc,char **file_in, char **file_out)
     argv[result]=NULL;
     return result;
 } 
+void run_pipeline(char *argv[], int argc, int pipe_pos) {
+    char *argv_left[MAX_ARGS];
+    char *argv_right[MAX_ARGS];
+    int i;
+    int leftc = 0;
+    for (i = 0; i < pipe_pos; i++) {
+        argv_left[leftc++] = argv[i];
+    }
+    argv_left[leftc] = NULL;
+    int rightc = 0;
+    for (i = pipe_pos + 1; i < argc; i++) {
+        argv_right[rightc++] = argv[i];
+    }
+    argv_right[rightc] = NULL;
+    if (leftc == 0 || rightc == 0) {
+        fprintf(stderr, "Syntax error: bad pipeline\n");
+        return;
+    }
+
+    int fd[2];
+    if (pipe(fd) < 0) {
+        perror("pipe");
+        return;
+    }
+
+    pid_t pid1 = fork();
+    if (pid1 < 0) {
+        perror("fork");
+        close(fd[0]);
+        close(fd[1]);
+        return;
+    }
+
+    if (pid1 == 0) {
+        if (dup2(fd[1], STDOUT_FILENO) < 0) {
+            perror("dup2 left");
+            exit(EXIT_FAILURE);
+        }
+        close(fd[0]); 
+        close(fd[1]); 
+
+        execvp(argv_left[0], argv_left);
+        perror("execvp left");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_t pid2 = fork();
+    if (pid2 < 0) {
+        perror("fork");
+        close(fd[0]);
+        close(fd[1]);
+        waitpid(pid1, NULL, 0);
+        return;
+    }
+
+    if (pid2 == 0) {
+        if (dup2(fd[0], STDIN_FILENO) < 0) {
+            perror("dup2 right");
+            exit(EXIT_FAILURE);
+        }
+        close(fd[1]); 
+        close(fd[0]); 
+
+        execvp(argv_right[0], argv_right);
+        perror("execvp right");
+        exit(EXIT_FAILURE);
+    }
+
+    close(fd[0]);
+    close(fd[1]);
+
+    int status;
+    waitpid(pid1, &status, 0);
+    waitpid(pid2, &status, 0);
+}
+
 int main() {
     char *line = NULL;   
     size_t len = 0;     
@@ -53,8 +130,6 @@ int main() {
     char *file_out=NULL;
     while (1) {
         printf("mini-shell> Please type your command: ");
-        fflush(stdout);  
-
         ssize_t nread = getline(&line, &len, stdin);
         if (nread == -1) {
             printf("\n");
@@ -69,9 +144,7 @@ int main() {
             continue;
         }
         int argc = generate_tokens(line,argv);
-        argc = redirection_handling(argv,argc,&file_in,&file_out);
         if(argc<=0){
-            printf("Enter a valid command");
             continue;
         }
         if(strcmp(argv[0],"exit")==0)
@@ -84,6 +157,22 @@ int main() {
             else if(chdir(next)!=0)
                 perror("cd");
             continue;   
+        }
+        int pipeline_position=-1;
+        for(int i=0;i<argc;i++){
+            if(strcmp(argv[i],"|")==0){
+                pipeline_position=i;
+                break;
+            }
+        }
+        if(pipeline_position!=-1){
+            run_pipeline(argv,argc,pipeline_position);
+            continue;
+        }
+
+        argc = redirection_handling(argv,argc,&file_in,&file_out);
+        if(argc<=0){
+            continue;
         }
         pid_t val = fork();
         if(val<0){
