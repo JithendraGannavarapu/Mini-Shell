@@ -5,6 +5,7 @@
 #include <unistd.h>    
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 static void print_prompt(void) {
@@ -13,6 +14,18 @@ static void print_prompt(void) {
     else printf("$ ");
     fflush(stdout);
 }
+void sigchld_handler(int sig) {
+    while (waitpid(-1, NULL, WNOHANG) > 0);
+}
+
+int check_background(char *argv[], int argc) {
+    if (argc > 0 && strcmp(argv[argc - 1], "&") == 0) {
+        argv[argc - 1] = NULL;
+        return 1;
+    }
+    return 0;
+}
+
 
 int generate_tokens(char *str, char *argv[]){
     int argc = 0;
@@ -60,6 +73,8 @@ int main() {
     char *argv[50];
     char *file_in=NULL;
     char *file_out=NULL;
+    signal(SIGCHLD, sigchld_handler);
+
     while (1) {
         print_prompt();
  
@@ -79,6 +94,8 @@ int main() {
         }
         int argc = generate_tokens(line,argv);
         argc = redirection_handling(argv,argc,&file_in,&file_out);
+        int background = check_background(argv, argc);
+
         if(argc<=0){
             printf("Enter a valid command");
             continue;
@@ -118,12 +135,16 @@ int main() {
             perror("execvp");
         }
         else{
-            int status;
-            if(waitpid(val,&status,0)<0){
-                perror("waitpid");
+            if(background){
+                printf("[bg] started pid %d\n", val);
+            }
+            else{
+                int status;
+                if (waitpid(val, &status, 0) < 0) {
+                    perror("waitpid");
+                }
             }
         }
-        // printf("your command is : %s\n", line);
     }
 
     free(line);
