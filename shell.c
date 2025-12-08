@@ -15,6 +15,7 @@ static void print_prompt(void) {
     fflush(stdout);
 }
 void sigchld_handler(int sig) {
+    (void)sig;
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
@@ -74,11 +75,12 @@ int main() {
     char *file_in=NULL;
     char *file_out=NULL;
     signal(SIGCHLD, sigchld_handler);
+    signal(SIGINT, SIG_IGN);
+
 
     while (1) {
         print_prompt();
  
-
         ssize_t nread = getline(&line, &len, stdin);
         if (nread == -1) {
             printf("\n");
@@ -117,20 +119,20 @@ int main() {
             continue;
         }
         else if(val==0){
-
+            signal(SIGINT, SIG_DFL);
             if (file_out != NULL) {
-    		int fd = open(file_out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    		if (fd < 0) { perror("open"); exit(1); }
-    		dup2(fd, 1);   
-    		close(fd);
-		}
+    		    int fd = open(file_out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    		    if (fd < 0) { perror("open"); exit(1); }
+    		    dup2(fd, 1);   
+    		    close(fd);
+		    }
 
-	     if (file_in != NULL) {
-    		int fd = open(file_in, O_RDONLY);
-    		if (fd < 0) { perror("open"); exit(1); }
-    		dup2(fd, 0);   
-    		close(fd);
-		}
+	        if (file_in != NULL) {
+    		    int fd = open(file_in, O_RDONLY);
+    		    if (fd < 0) { perror("open"); exit(1); }
+    		    dup2(fd, 0);   
+    		    close(fd);
+		    }
             execvp(argv[0],argv);
             perror("execvp");
         }
