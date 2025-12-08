@@ -47,21 +47,38 @@ int redirection_handling(char *argv[], int argc,char **file_in, char **file_out)
     return result;
 } 
 void run_pipeline(char *argv[], int argc, int pipe_pos) {
-    char *argv_left[MAX_ARGS];
-    char *argv_right[MAX_ARGS];
+    char *argv_cmd1[MAX_ARGS];
+    char *argv_cmd2[MAX_ARGS];
     int i;
-    int leftc = 0;
+    int cmd1 = 0;
     for (i = 0; i < pipe_pos; i++) {
-        argv_left[leftc++] = argv[i];
+        argv_cmd1[cmd1++] = argv[i];
     }
-    argv_left[leftc] = NULL;
-    int rightc = 0;
+    argv_cmd1[cmd1] = NULL;
+    int cmd2 = 0;
     for (i = pipe_pos + 1; i < argc; i++) {
-        argv_right[rightc++] = argv[i];
+        argv_cmd2[cmd2++] = argv[i];
     }
-    argv_right[rightc] = NULL;
-    if (leftc == 0 || rightc == 0) {
-        fprintf(stderr, "Syntax error: bad pipeline\n");
+    argv_cmd2[cmd2] = NULL;
+    if (cmd1 == 0 || cmd2 == 0) {
+        printf("Syntax error: something should present in left or right for pipeline\n");
+        return;
+    }
+    char *file_in_cmd1 = NULL;
+    char *file_out_cmd1 = NULL;
+    char *file_in_cmd2 = NULL;
+    char *file_out_cmd2 = NULL;
+    cmd1 = redirection_handling(argv_cmd1,cmd1,&file_in_cmd1,&file_out_cmd1);
+    cmd2 = redirection_handling(argv_cmd2,cmd2,&file_in_cmd2,&file_out_cmd2);
+    if(cmd1 < 0 || cmd2 < 0){
+        return;
+    }
+    if(file_out_cmd1!= NULL || file_in_cmd2 != NULL){
+        printf("Invalid command");
+        return;
+    }
+    if (cmd1 == 0 || cmd2 == 0) {
+        printf("Syntax error: something should present in left or right for redirections\n");
         return;
     }
 
@@ -80,16 +97,29 @@ void run_pipeline(char *argv[], int argc, int pipe_pos) {
     }
 
     if (pid1 == 0) {
-        if (dup2(fd[1], STDOUT_FILENO) < 0) {
-            perror("dup2 left");
-            exit(EXIT_FAILURE);
+        if(file_in_cmd1 != NULL){
+            int fd_in = open(file_in_cmd1, O_RDONLY);
+            if (fd_in < 0) {
+                perror("open (cmd1 input)");
+                exit(1);
+            }
+            if (dup2(fd_in, 0) < 0) {
+                perror("dup2 (cmd1 input)");
+                close(fd_in);
+                exit(1);
+            }
+            close(fd_in);
         }
-        close(fd[0]); 
-        close(fd[1]); 
+            if (dup2(fd[1], 1) < 0) {
+                perror("dup2 cmd1");
+                exit(EXIT_FAILURE);
+            }
+            close(fd[0]); 
+            close(fd[1]); 
 
-        execvp(argv_left[0], argv_left);
-        perror("execvp left");
-        exit(EXIT_FAILURE);
+            execvp(argv_cmd1[0], argv_cmd1);
+            perror("execvp cmd1");
+            exit(EXIT_FAILURE);
     }
 
     pid_t pid2 = fork();
@@ -102,15 +132,27 @@ void run_pipeline(char *argv[], int argc, int pipe_pos) {
     }
 
     if (pid2 == 0) {
-        if (dup2(fd[0], STDIN_FILENO) < 0) {
-            perror("dup2 right");
+        if (dup2(fd[0], 0) < 0) {
+            perror("dup2 cmd2");
             exit(EXIT_FAILURE);
         }
         close(fd[1]); 
         close(fd[0]); 
-
-        execvp(argv_right[0], argv_right);
-        perror("execvp right");
+         if(file_out_cmd2 != NULL){
+            int fd_out = open(file_out_cmd2, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd_out < 0) {
+                perror("open (cmd2 output)");
+                exit(1);
+            }
+            if (dup2(fd_out, 1) < 0) {
+                perror("dup2 (cmd2 output)");
+                close(fd_out);
+                exit(1);
+            }
+            close(fd_out);
+        }
+        execvp(argv_cmd2[0], argv_cmd2);
+        perror("execvp cmd2");
         exit(EXIT_FAILURE);
     }
 
