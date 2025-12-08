@@ -5,7 +5,16 @@
 #include <unistd.h>    
 #include <sys/wait.h>
 #include <fcntl.h>
- int generate_tokens(char *str, char *argv[]){
+
+
+static void print_prompt(void) {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd))) printf("mini-shell:%s $ ", cwd);
+    else printf("$ ");
+    fflush(stdout);
+}
+
+int generate_tokens(char *str, char *argv[]){
     int argc = 0;
     char *token = strtok(str, " ");
 
@@ -52,8 +61,8 @@ int main() {
     char *file_in=NULL;
     char *file_out=NULL;
     while (1) {
-        printf("mini-shell> Please type your command: ");
-        fflush(stdout);  
+        print_prompt();
+ 
 
         ssize_t nread = getline(&line, &len, stdin);
         if (nread == -1) {
@@ -114,7 +123,7 @@ int main() {
                 perror("waitpid");
             }
         }
-        printf("your command is : %s\n", line);
+        // printf("your command is : %s\n", line);
     }
 
     free(line);
